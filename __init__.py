@@ -48,7 +48,16 @@ def register(ctx):
 
     official.register(ScopedRegistration())
     if callable(getattr(ctx, 'register_hook', None)):
-        ctx.register_hook('pre_llm_call', topic_context.before_llm)
+        from pathlib import Path
+        from hermes_constants import get_hermes_home
+        owner = str(Path(get_hermes_home()).resolve())
+        def owner_hook(**kwargs):
+            # A callback retained or invoked under a foreign scope cannot read it.
+            if str(Path(get_hermes_home()).resolve()) != owner:
+                return None
+            return topic_context.before_llm(**kwargs)
+        setattr(owner_hook, '_feishu_topic_owner', owner)
+        ctx.register_hook('pre_llm_call', owner_hook)
         ClarifyFeishuAdapter._topic_context_hook_ready = True
         if callable(getattr(ctx, 'on_unload', None)):
             ctx.on_unload(lambda: setattr(ClarifyFeishuAdapter, '_topic_context_hook_ready', False))

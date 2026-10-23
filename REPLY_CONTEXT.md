@@ -23,9 +23,21 @@ Defaults and bounded fallbacks:
 
 - `platforms.feishu.extra.topic_root_context_once: true`; set false to restore
   official quotes. No live configuration was changed.
-- Multiplex mode retains official quotes: ingress transport profile and final
-  routed profile may differ, and native admission rejects arbitrary plugin
-  metadata. No fake chat-based session identity is substituted.
+- Multiplex mode uses core's `canonical_identity` before conversion, pinning the
+  same transport/runtime identity subsequent core routing uses. Authorization
+  still belongs to the receiving bot; runtime storage belongs only to the final
+  profile. A routed named home is checked against `get_profile_dir`/existence so
+  core's legacy missing-profile ambient fallback cannot receive root files.
+- The final owner's existing profile-local PluginManager must already contain an
+  owner-bound topic hook. The plugin only reads this readiness; it does not load
+  plugins, register callbacks or modify another profile. Missing/unsupported
+  identity APIs or inactive target hooks keep the full quote.
+- A short-lived ContextVar home binding covers synchronous reference creation
+  and spill-budget lookup, and is reset before official dispatch/any await.
+  There are no process-global environment overrides. Hook callbacks are bound
+  to their registration home, and files include that owner in their checksum;
+  foreign/copied references are rejected without reading any other home.
+  Two profiles sharing a chat/thread have separate files and seen ledgers.
 - Inactive/unloaded hooks, failed storage writes, missing native root/thread,
   DMs, commands, media-bearing messages and explicit non-root replies retain official text.
 - Roots exceeding core's configured `hooks.output_spill` budget retain official
@@ -49,6 +61,10 @@ Defaults and bounded fallbacks:
   A crash/failure after the hook returns but before core accepts/persists it can
   leave a seen record without a delivered root. A public transactional commit
   seam does not exist here. Clearing that profile-local ledger reallows roots.
+- References from the old owner-less format are deliberately rejected; drain old
+  queued turns before upgrading. No migration scans another profile or copies
+  root text/seen records across homes. An unexpected foreign reference is not
+  resolved by searching other profiles; rejection is not a full-quote recovery.
 - Disabling/unloading between reference admission and execution, hook timeout,
   configuration changes to spill limits while queued, unavailable reference
   files, or a core hook contract change can prevent first injection. A missing
@@ -67,7 +83,18 @@ mixin separately, the real core context collector, native JSON compatibility,
 profile/sender boundaries, non-root/DM/group preservation, capacity fallback,
 new topics and the **real `/new` handler with a real SessionStore**.
 
-Full plugin suite: **51 tests passed**; official CLI validator exit 0, `ok: true`.
+Full plugin suite: **60 tests passed**; official CLI validator exit 0, `ok: true`.
+The multiplex extension was RED first on routed-root suppression, copied-owner
+rejection and ambient-home fallback isolation, then GREEN. New tests use the real
+route matcher and served-profile gate, canonical identity, real PluginContext /
+profile-local PluginManager dispatch (including the real context collector),
+ContextVar home scopes and real SessionStore IDs. `/new` is exercised in one
+routed profile while the other profile's seen ledger remains unchanged.
+Concurrency tests interleave two home contexts over the same chat/thread.
+Filesystem profile discovery and PM launcher activation are test boundaries;
+there is no live gateway, network delivery or full upstream regression run.
+SQLite connections are explicitly closed after transaction completion (Windows
+otherwise retained handles until GC).
 Existing private-core-import warnings remain; no catalog approval is implied.
 
 Full plugin suite and official CLI validator are run by `scripts/verify.py`

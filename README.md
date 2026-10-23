@@ -20,21 +20,26 @@ Cards and pending state are process-local; restarting does not restore pending c
 
 ## Topic-mode reply context
 
-Enabled by default for non-multiplex topic groups: a root quote is supplied once
+Enabled by default for topic groups, including multiplex profiles when the
+final routed owner has its own active plugin hook: a root quote is supplied once
 per **actual agent session ID**, not once per chat. `/new` and genuine session
 replacement allow it again. Explicit non-root replies, DMs, ordinary groups and
 reply anchors remain intact. Explicitly quoting the root again can be suppressed;
 compression/rewind can lose previously supplied detail. This is **not lossless**.
 
 Disable with `hermes config set platforms.feishu.extra.topic_root_context_once false`
-before an intentional restart (not performed here). Multiplex profiles retain
-full official quotes until a routed-profile durable reference seam is available.
+before an intentional restart (not performed here). Multiplex routing pins core's
+canonical identity before conversion. Only the final owner's cache and hook are
+used, with context-local home binding; no hooks are installed into other profiles.
+Missing/inactive target hooks, unresolved homes, media and oversized roots keep
+full official quotes. Each target profile must already have the plugin enabled.
+Foreign/copied references are rejected, never fetched from another profile.
 See [implementation and limitations](REPLY_CONTEXT.md), including durable local
 storage, capacity fallbacks, hook failure caveats and live acceptance checks.
 
 ## Compatibility and migration
 
-Latest topic-policy verification: clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.7, real Lark SDK: **51 tests passed**, official validator exit 0 (`ok: true`). Includes real discovery/hook teardown and the actual `/new` handler with real SessionStore. Original clarify-only baseline: `e06df9c2eae6901f4c88f464e0ae6e753c0428b8` on Windows, Python 3.14.7, using the installed `lark-oapi` SDK and stdlib unittest. This is a **tested commit, not a promise of a supported version range**. Retest after upgrading Hermes. Feishu support must already be available through Hermes' own setup/managed environment; this plugin does not install packages.
+Latest topic-policy verification: clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.7, real Lark SDK: **60 tests passed**, official validator exit 0 (`ok: true`). Includes real discovery/hook teardown and the actual `/new` handler with real SessionStore. Original clarify-only baseline: `e06df9c2eae6901f4c88f464e0ae6e753c0428b8` on Windows, Python 3.14.7, using the installed `lark-oapi` SDK and stdlib unittest. This is a **tested commit, not a promise of a supported version range**. Retest after upgrading Hermes. Feishu support must already be available through Hermes' own setup/managed environment; this plugin does not install packages.
 
 The plugin calls the official `register()` through a forwarding context, changing only `adapter_factory`. Every official registration field (authorization env names, setup, validation, dependency probes/installers, YAML bridge, standalone sender, delivery settings) is preserved. Registration is owned by the actual `PluginContext` scope/ledger. No private registry-table writes or global monkeypatching.
 

@@ -3,6 +3,7 @@
 No model history or core objects are mutated. Durable references survive native
 admission's JSON snapshot and gateway restarts; unknown references fail visibly.
 """
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -28,7 +29,7 @@ def reference(event):
     """Return a durable short reference, or None so the full official quote wins."""
     payload = {'text': event.reply_to_text, 'root': event.reply_to_message_id,
                'thread': event.source.thread_id, 'chat': event.source.chat_id,
-               'sender': event.source.user_id}
+               'sender': event.source.user_id, 'owner': str(Path(get_hermes_home()).resolve())}
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode('utf-8')
     # Public hook outputs may be replaced by a head/tail preview. Never silently
     # turn a full first root quote into that lossy preview.
@@ -74,10 +75,12 @@ def before_llm(*, session_id='', platform='', user_message='', sender_id='', **k
             if hashlib.sha256(encoded).hexdigest() != token:
                 raise ValueError('root reference checksum mismatch')
             payload = json.loads(encoded)
+            if payload.get('owner') != str(Path(get_hermes_home()).resolve()):
+                continue
             if not sender_id or payload.get('sender') != sender_id:
                 continue
             root_key = json.dumps([payload['chat'], payload['thread'], payload['root']])
-            with sqlite3.connect(directory / 'seen.sqlite3', timeout=2) as db:
+            with closing(sqlite3.connect(directory / 'seen.sqlite3', timeout=2)) as db, db:
                 db.execute('CREATE TABLE IF NOT EXISTS seen (session TEXT, root TEXT, PRIMARY KEY(session, root))')
                 db.execute('BEGIN IMMEDIATE')
                 present = db.execute('SELECT 1 FROM seen WHERE session=? AND root=?',
@@ -98,6 +101,37 @@ def before_llm(*, session_id='', platform='', user_message='', sender_id='', **k
     return {'context': '\n\n'.join(pieces)} if pieces else None
 
 
+def routed_reference(adapter, event):
+    """Pin core's routing identity, then use only an already registered owner hook.
+
+    Never discover/install hooks in another profile or borrow ingress readiness.
+    Unknown/unsupported routing deliberately keeps the official quote.
+    """
+    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from gateway.session_identity import canonical_identity
+    from hermes_cli.plugins import get_plugin_manager
+    identity = canonical_identity(event.source, runner=adapter.gateway_runner, adapter=adapter)
+    if identity is None or not identity.multiplexed:
+        raise ValueError('final profile identity unavailable')
+    owner = str(identity.runtime_home.resolve())
+    # Core's legacy resolver may fall back to ambient home for a missing named
+    # profile. Never persist routed text under that fallback tenant.
+    if identity.runtime_profile != identity.transport_profile:
+        from hermes_cli.profiles import get_profile_dir, profile_exists
+        if (not profile_exists(identity.runtime_profile)
+                or str(get_profile_dir(identity.runtime_profile).resolve()) != owner):
+            raise ValueError('routed profile home is not authoritative')
+    token = set_hermes_home_override(owner)
+    try:
+        manager = get_plugin_manager()
+        if not any(getattr(cb, '_feishu_topic_owner', None) == owner
+                   for cb in manager._hooks.get('pre_llm_call', ())):
+            raise ValueError('final profile has no active topic hook')
+        return reference(event)
+    finally:
+        reset_hermes_home_override(token)
+
+
 class TopicRootContextMixin:
     async def _dispatch_inbound_event(self, event):
         source = event.source
@@ -106,15 +140,15 @@ class TopicRootContextMixin:
         runner = getattr(self, 'gateway_runner', None)
         multiplex = getattr(getattr(runner, 'config', None), 'multiplex_profiles', False)
         enabled = self.config.extra.get('topic_root_context_once', True) is True
-        if (enabled and getattr(self, '_topic_context_hook_ready', False) and not multiplex
+        if (enabled and getattr(self, '_topic_context_hook_ready', False)
                 and source and source.chat_type != 'dm'
                 and source.thread_id and root and event.reply_to_message_id == root
                 and not event.media_urls
                 and getattr(event.message_type, 'value', None) == 'text'
                 and event.reply_to_text and not event.is_command()):
             try:
-                event.reply_to_text = reference(event)
-            except (OSError, ValueError, TypeError):
+                event.reply_to_text = routed_reference(self, event) if multiplex else reference(event)
+            except (OSError, ValueError, TypeError, AttributeError, ImportError):
                 # The original full root text stays intact on a failed write.
                 pass
         return await super()._dispatch_inbound_event(event)

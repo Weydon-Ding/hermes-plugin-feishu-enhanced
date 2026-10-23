@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-这是一个**社区直接安装插件**，只增强已有 `clarify` 问答在飞书/Lark 中的展示与交互。通过继承官方 `FeishuAdapter` 并替换同名 `feishu` 平台工厂实现；不会修改核心源码、增加模型工具、修改提示词、增加流式消息功能或另起一个机器人连接。
+这是一个**社区直接安装插件**，提供飞书/Lark 原生 `clarify` 卡片和按真实会话去重的话题根消息上下文。通过继承官方 `FeishuAdapter` 并替换同名 `feishu` 平台工厂实现；不会修改核心源码、增加模型工具、改写系统提示词、增加流式消息功能或另起一个机器人连接。
 
 **不是 Hermes / Nous Research 官方插件，没有官方背书，也不符合官方插件目录准入。** 使用私有适配器/clarify 接口涉及目录规则 9；同名平台注册替换涉及规则 15。CLI 验证成功不等于目录接纳。原生插件与网关同进程、同权限运行，不是沙箱。
 
@@ -16,7 +16,30 @@
 - 超时/重置/文本回答结束时，支持网关调用 retirement hook，通过 SDK 的交互消息 patch 更新卡片。断开连接时清理自有状态并委托官方断连。
 - 非本插件命名空间的回调完整交给父适配器，包括审批、更新确认及未知回调。普通消息、附件、流式行为和连接逻辑保持继承。
 
-状态仅在内存中；重启不恢复未完成卡片。网络异常可能让过期按钮仍可见，但无法回答失效项。
+卡片状态仅在内存中；重启不恢复未完成卡片。网络异常可能让过期按钮仍可见，但无法回答失效项。
+
+## 话题根消息上下文
+
+默认按**真实 agent session ID**只注入一次根消息，支持多 profile multiplex。
+先通过核心 canonical routing identity 固定最终执行 profile，再使用其已有插件 hook
+和本地缓存；入口机器人的 profile 不必等于执行 profile。使用 ContextVar 绑定 home，
+不改进程环境、不向其他 profile 注册 hook、不绕过官方授权。
+目标 profile 必须事先启用插件；hook 不活跃、路由/home 不可靠、媒体消息、内容超预算
+或存储已满时保留官方完整引用。非根消息显式引用、私聊、普通群和回复锚点不变。
+引用文件含 owner，异 profile 或复制来的引用不会读取其他 profile 的消息。
+
+`/new` 创建新真实会话后可再次注入，两个 profile 的相同群/话题独立记账。
+显式再次引用根消息也可能被去重；压缩/回退可能丢失旧详情，hook 返回与实际模型接收
+之间也有失败窗口，因此**不是无损保证**。缓存含消息正文，位于
+`<HERMES_HOME>/cache/feishu-enhanced-topic/`，应按会话记录保护；排队引用未执行时不要删除。
+旧版无 owner 的缓存引用会被拒绝，应先排空旧队列；详情及容量限制见 [REPLY_CONTEXT.md](REPLY_CONTEXT.md)。
+可用 `hermes config set platforms.feishu.extra.topic_root_context_once false` 关闭。
+本次未安装或重启。
+
+最新离线验证：干净核心 `bf0203a794a07aac3ff764972ab9087baa4e4f4e`、受管 Python 3.14.7、
+真实 Lark SDK，**60 项插件测试通过**，官方验证器退出 0、`ok: true`。
+包括真实路由匹配/身份固定、profile 本地 PluginContext/PluginManager、并发上下文、
+真实 SessionStore 和 `/new`；不是线上飞书验收或官方目录准入。
 
 ## 复用昨天的实现
 
