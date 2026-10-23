@@ -2,13 +2,16 @@
 import logging
 from plugins.platforms.feishu.adapter import FeishuAdapter
 from .clarify import FeishuClarifyMixin, NAMESPACE
+from . import topic_context
+from .topic_context import TopicRootContextMixin
 from tools import clarify_gateway as cg
 
 logger = logging.getLogger(__name__)
 
 
-class ClarifyFeishuAdapter(FeishuClarifyMixin, FeishuAdapter):
-    """All non-clarify behavior remains inherited from the official adapter."""
+class ClarifyFeishuAdapter(TopicRootContextMixin, FeishuClarifyMixin, FeishuAdapter):
+    """Clarify cards plus actual-session topic-root sidecars."""
+    _topic_context_hook_ready = False
 
 
 def register(ctx):
@@ -44,3 +47,8 @@ def register(ctx):
             return ctx.register_platform(*args, **kwargs)
 
     official.register(ScopedRegistration())
+    if callable(getattr(ctx, 'register_hook', None)):
+        ctx.register_hook('pre_llm_call', topic_context.before_llm)
+        ClarifyFeishuAdapter._topic_context_hook_ready = True
+        if callable(getattr(ctx, 'on_unload', None)):
+            ctx.on_unload(lambda: setattr(ClarifyFeishuAdapter, '_topic_context_hook_ready', False))

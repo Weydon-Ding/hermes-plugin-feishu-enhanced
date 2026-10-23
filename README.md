@@ -2,7 +2,7 @@
 
 [中文说明](README.zh-CN.md)
 
-A **community, direct-install** Hermes plugin that adds native Feishu/Lark cards to the existing `clarify` flow. It subclasses the bundled Feishu adapter; it does not fork the gateway or add model tools.
+A **community, direct-install** Hermes plugin that adds native Feishu/Lark clarify cards and once-per-session topic-root context. It subclasses the bundled Feishu adapter; it does not fork the gateway or add model tools.
 
 **Not an official Nous Research plugin, not endorsed by Hermes, and not eligible for the official catalog.** This intentionally uses private adapter/clarify internals (catalog rule 9) and replaces the registered `feishu` factory under the same platform name (rule 15). A successful validator run does **not** imply catalog acceptance. Native plugins execute with the gateway's privileges, not in a sandbox.
 
@@ -14,13 +14,27 @@ A **community, direct-install** Hermes plugin that adds native Feishu/Lark cards
 - Duplicate multi-toggle delivery tokens are ignored; empty submit, invalid indices (including booleans), stale/resolved/replaced entries are rejected. Tokenless multi actions are rejected rather than toggled unsafely.
 - Open-ended questions remain text. Native card delivery failure falls back to the official numbered-text implementation.
 - Gateway retirement removes buttons with the SDK interactive-message patch API. Disconnect clears plugin-owned state and delegates official disconnect.
-- Unrecognized actions, approvals, update prompts, ordinary messages, attachments, streaming and connection behavior remain official. No new tools, hooks, prompts or model settings are registered.
+- Unrecognized actions, approvals, update prompts, ordinary messages, attachments, streaming and connection behavior remain official. No new tools or model settings are registered. One `pre_llm_call` hook supplies session-scoped topic-root context.
 
 Cards and pending state are process-local; restarting does not restore pending cards. Late callbacks after restart are inert. A retirement network failure may leave visible stale buttons, but they cannot resolve an expired entry.
 
+## Topic-mode reply context
+
+Enabled by default for non-multiplex topic groups: a root quote is supplied once
+per **actual agent session ID**, not once per chat. `/new` and genuine session
+replacement allow it again. Explicit non-root replies, DMs, ordinary groups and
+reply anchors remain intact. Explicitly quoting the root again can be suppressed;
+compression/rewind can lose previously supplied detail. This is **not lossless**.
+
+Disable with `hermes config set platforms.feishu.extra.topic_root_context_once false`
+before an intentional restart (not performed here). Multiplex profiles retain
+full official quotes until a routed-profile durable reference seam is available.
+See [implementation and limitations](REPLY_CONTEXT.md), including durable local
+storage, capacity fallbacks, hook failure caveats and live acceptance checks.
+
 ## Compatibility and migration
 
-Verified against clean Hermes commit `e06df9c2eae6901f4c88f464e0ae6e753c0428b8` on Windows, Python 3.14.7, using the installed `lark-oapi` SDK and stdlib unittest. This is a **tested commit, not a promise of a supported version range**. Retest after upgrading Hermes. Feishu support must already be available through Hermes' own setup/managed environment; this plugin does not install packages.
+Latest topic-policy verification: clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.7, real Lark SDK: **51 tests passed**, official validator exit 0 (`ok: true`). Includes real discovery/hook teardown and the actual `/new` handler with real SessionStore. Original clarify-only baseline: `e06df9c2eae6901f4c88f464e0ae6e753c0428b8` on Windows, Python 3.14.7, using the installed `lark-oapi` SDK and stdlib unittest. This is a **tested commit, not a promise of a supported version range**. Retest after upgrading Hermes. Feishu support must already be available through Hermes' own setup/managed environment; this plugin does not install packages.
 
 The plugin calls the official `register()` through a forwarding context, changing only `adapter_factory`. Every official registration field (authorization env names, setup, validation, dependency probes/installers, YAML bridge, standalone sender, delivery settings) is preserved. Registration is owned by the actual `PluginContext` scope/ledger. No private registry-table writes or global monkeypatching.
 
