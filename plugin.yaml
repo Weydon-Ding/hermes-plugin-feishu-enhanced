@@ -1,0 +1,9 @@
+name: feishu-enhanced
+label: Feishu Enhanced (community)
+kind: platform
+version: 0.1.0
+description: Lightweight community Feishu enhancements, currently clarify cards. Direct install only; not catalog eligible.
+author: Community contributors
+license: MIT
+provides_tools: []
+provides_hooks: []

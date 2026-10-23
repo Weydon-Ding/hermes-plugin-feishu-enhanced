@@ -1,0 +1,46 @@
+"""Community clarify-only Feishu plugin; no global class mutation."""
+import logging
+from plugins.platforms.feishu.adapter import FeishuAdapter
+from .clarify import FeishuClarifyMixin, NAMESPACE
+from tools import clarify_gateway as cg
+
+logger = logging.getLogger(__name__)
+
+
+class ClarifyFeishuAdapter(FeishuClarifyMixin, FeishuAdapter):
+    """All non-clarify behavior remains inherited from the official adapter."""
+
+
+def register(ctx):
+    """Forward all official metadata through the caller's scoped context."""
+    from plugins.platforms.feishu import adapter as official
+    from gateway.platforms.base import BasePlatformAdapter
+    if official.FeishuAdapter.send_clarify is not BasePlatformAdapter.send_clarify:
+        module = official.FeishuAdapter.send_clarify.__module__
+        if module == 'plugins.platforms.feishu.clarify':
+            logger.warning('Feishu clarify: prior LOCAL CORE PATCH detected; plugin inactive. Back up and review that patch before manual migration.')
+        else:
+            logger.warning('Feishu clarify: upstream/native or unknown clarify override detected; preserving it, plugin inactive.')
+        return
+    required = ('_send_interactive_card', '_card_response', '_allow_group_message', '_on_card_action_trigger', '_response_succeeded')
+    if any(not callable(getattr(official.FeishuAdapter, name, None)) for name in required) or not hasattr(cg, '_entries') or not hasattr(cg, '_lock'):
+        logger.warning('Feishu clarify: incompatible internal API; leaving official adapter untouched.')
+        return
+
+    import inspect
+    try:
+        inspect.signature(official.FeishuAdapter._send_interactive_card).bind(
+            None, 'chat', {}, None, 'failure', state_map={}, state_id='id', session_key='key')
+        inspect.signature(official.FeishuAdapter._on_card_action_trigger).bind(None, None)
+        inspect.signature(official.FeishuAdapter._allow_group_message).bind(None, None, 'chat')
+        inspect.signature(official.FeishuAdapter._card_response).bind({})
+    except (TypeError, ValueError):
+        logger.warning('Feishu clarify: incompatible internal signature; leaving official adapter untouched.')
+        return
+
+    class ScopedRegistration:
+        def register_platform(self, *args, **kwargs):
+            kwargs['adapter_factory'] = ClarifyFeishuAdapter
+            return ctx.register_platform(*args, **kwargs)
+
+    official.register(ScopedRegistration())
