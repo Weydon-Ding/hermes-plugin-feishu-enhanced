@@ -1,17 +1,23 @@
-"""Community clarify-only Feishu plugin; no global class mutation."""
+"""Community Feishu clarify cards and topic quotes; no global class mutation."""
 import logging
 from plugins.platforms.feishu.adapter import FeishuAdapter
 from .clarify import FeishuClarifyMixin, NAMESPACE
-from . import topic_context
-from .topic_context import TopicRootContextMixin
 from tools import clarify_gateway as cg
 
 logger = logging.getLogger(__name__)
 
 
-class ClarifyFeishuAdapter(TopicRootContextMixin, FeishuClarifyMixin, FeishuAdapter):
-    """Clarify cards plus actual-session topic-root sidecars."""
-    _topic_context_hook_ready = False
+class ClarifyFeishuAdapter(FeishuClarifyMixin, FeishuAdapter):
+    """Clarify cards and native topic-root quote suppression."""
+
+    async def _dispatch_inbound_event(self, event):
+        source = event.source
+        raw = getattr(getattr(event.raw_message, 'event', None), 'message', None)
+        root = getattr(raw, 'root_id', None)
+        if (source and source.chat_type == 'group' and source.thread_id
+                and root and event.reply_to_message_id == root):
+            event.reply_to_text = None
+        return await super()._dispatch_inbound_event(event)
 
 
 def register(ctx):
@@ -47,17 +53,3 @@ def register(ctx):
             return ctx.register_platform(*args, **kwargs)
 
     official.register(ScopedRegistration())
-    if callable(getattr(ctx, 'register_hook', None)):
-        from pathlib import Path
-        from hermes_constants import get_hermes_home
-        owner = str(Path(get_hermes_home()).resolve())
-        def owner_hook(**kwargs):
-            # A callback retained or invoked under a foreign scope cannot read it.
-            if str(Path(get_hermes_home()).resolve()) != owner:
-                return None
-            return topic_context.before_llm(**kwargs)
-        setattr(owner_hook, '_feishu_topic_owner', owner)
-        ctx.register_hook('pre_llm_call', owner_hook)
-        ClarifyFeishuAdapter._topic_context_hook_ready = True
-        if callable(getattr(ctx, 'on_unload', None)):
-            ctx.on_unload(lambda: setattr(ClarifyFeishuAdapter, '_topic_context_hook_ready', False))

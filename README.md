@@ -2,7 +2,7 @@
 
 [中文说明](README.zh-CN.md)
 
-A **community, direct-install** Hermes plugin that adds native Feishu/Lark clarify cards and once-per-session topic-root context. It subclasses the bundled Feishu adapter; it does not fork the gateway or add model tools.
+A **community, direct-install** Hermes plugin that adds native Feishu/Lark clarify cards and suppresses topic-root quote text. It subclasses the bundled Feishu adapter; it does not fork the gateway or add model tools.
 
 **Not an official Nous Research plugin, not endorsed by Hermes, and not eligible for the official catalog.** This intentionally uses private adapter/clarify internals (catalog rule 9) and replaces the registered `feishu` factory under the same platform name (rule 15). A successful validator run does **not** imply catalog acceptance. Native plugins execute with the gateway's privileges, not in a sandbox.
 
@@ -14,32 +14,32 @@ A **community, direct-install** Hermes plugin that adds native Feishu/Lark clari
 - Duplicate multi-toggle delivery tokens are ignored; empty submit, invalid indices (including booleans), stale/resolved/replaced entries are rejected. Tokenless multi actions are rejected rather than toggled unsafely.
 - Open-ended questions remain text. Native card delivery failure falls back to the official numbered-text implementation.
 - Gateway retirement removes buttons with the SDK interactive-message patch API. Disconnect clears plugin-owned state and delegates official disconnect.
-- Unrecognized actions, approvals, update prompts, ordinary messages, attachments, streaming and connection behavior remain official. No new tools or model settings are registered. One `pre_llm_call` hook supplies session-scoped topic-root context.
+- Unrecognized actions, approvals, update prompts, attachments, streaming and connection behavior remain official. No tools, lifecycle hooks or model settings are registered. Only native topic-root reply text is suppressed.
 
 Cards and pending state are process-local; restarting does not restore pending cards. Late callbacks after restart are inert. A retirement network failure may leave visible stale buttons, but they cannot resolve an expired entry.
 
 ## Topic-mode reply context
 
-Enabled by default for topic groups, including multiplex profiles when the
-final routed owner has its own active plugin hook: a root quote is supplied once
-per **actual agent session ID**, not once per chat. `/new` and genuine session
-replacement allow it again. Explicit non-root replies, DMs, ordinary groups and
-reply anchors remain intact. Explicitly quoting the root again can be suppressed;
-compression/rewind can lose previously supplied detail. This is **not lossless**.
+For a group event with a native topic `thread_id`, when the resolved
+`reply_to_message_id` equals the raw native `root_id`, clear only
+`reply_to_text` before the gateway builds its quote prefix. This applies on
+every turn, including explicit replies to the root, commands and media messages.
+Non-root replies retain their complete quotes. DMs, ordinary groups and events
+without a root or reply ID are unchanged. Reply anchors and topic session keys
+remain official.
 
-Disable with `hermes config set platforms.feishu.extra.topic_root_context_once false`
-before an intentional restart (not performed here). Multiplex routing pins core's
-canonical identity before conversion. Only the final owner's cache and hook are
-used, with context-local home binding; no hooks are installed into other profiles.
-Missing/inactive target hooks, unresolved homes, media and oversized roots keep
-full official quotes. Each target profile must already have the plugin enabled.
-Foreign/copied references are rejected, never fetched from another profile.
-See [implementation and limitations](REPLY_CONTEXT.md), including durable local
-storage, capacity fallbacks, hook failure caveats and live acceptance checks.
+The same stateless rule applies in multiplex mode; there is no special routing,
+reference marker, sidecar, SQLite ledger, lifecycle hook or context reinjection.
+`/new` clears context normally and the next root reference is still suppressed.
+This intentionally gives up automatic root context, including on the first
+turn; paste required details into the new message after a reset. The old
+`topic_root_context_once` setting is no longer used. Existing runtime sidecars
+are not migrated or deleted. Drain old queued reference-bearing turns before
+switching builds. See [verification notes](VERIFICATION.md).
 
 ## Compatibility and migration
 
-Latest topic-policy verification: clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.7, real Lark SDK: **60 tests passed**, official validator exit 0 (`ok: true`). Includes real discovery/hook teardown and the actual `/new` handler with real SessionStore. Original clarify-only baseline: `e06df9c2eae6901f4c88f464e0ae6e753c0428b8` on Windows, Python 3.14.7, using the installed `lark-oapi` SDK and stdlib unittest. This is a **tested commit, not a promise of a supported version range**. Retest after upgrading Hermes. Feishu support must already be available through Hermes' own setup/managed environment; this plugin does not install packages.
+Verified against clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.9 and the real Lark SDK: **42 tests passed**, official validator exit 0 (`ok: true`). Includes actual adapter normalization/gateway formatting, discovery/unload with no topic hook, and the real `/new` handler with SessionStore. This is a tested commit, not a supported version range. Retest after upgrading Hermes; this plugin does not install packages.
 
 The plugin calls the official `register()` through a forwarding context, changing only `adapter_factory`. Every official registration field (authorization env names, setup, validation, dependency probes/installers, YAML bridge, standalone sender, delivery settings) is preserved. Registration is owned by the actual `PluginContext` scope/ledger. No private registry-table writes or global monkeypatching.
 
@@ -107,6 +107,7 @@ After an intentional restart, confirm the actual rendered card and returned tool
 4. Another group member cannot answer a per-user question; permitted users can answer shared threads. Disabled/allowlist/blacklist/admin group rules still apply.
 5. Plain text fallback and timeout/reset/typed-answer retirement.
 6. Ordinary messages, attachments, approvals, update prompts and streaming behave as before.
+7. Topic-root prefixes stay absent on first/repeated turns and after `/new`; explicit non-root replies keep their full quote. Check another topic, DMs, ordinary groups and multiplex operation.
 
 No live channel rendering/callback acceptance is claimed by offline tests.
 

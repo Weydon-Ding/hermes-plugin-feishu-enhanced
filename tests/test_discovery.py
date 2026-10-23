@@ -31,8 +31,8 @@ assert entry.adapter_factory is not FeishuAdapter, ('wrong adapter selected', en
 a = entry.adapter_factory(PlatformConfig())
 assert isinstance(a, FeishuAdapter)
 assert type(a).send is FeishuAdapter.send
-assert a._topic_context_hook_ready
-assert manager._hooks.get('pre_llm_call'), 'actual-session hook not registered'
+assert not manager._hooks.get('pre_llm_call'), 'unexpected topic hook'
+assert not hasattr(a, '_topic_context_hook_ready')
 assert type(a).connect is FeishuAdapter.connect
 assert type(a).send_exec_approval is FeishuAdapter.send_exec_approval
 assert entry.allowed_users_env == 'FEISHU_ALLOWED_USERS'
@@ -42,7 +42,7 @@ import os
 old_home = os.environ['HERMES_HOME']
 os.environ['HERMES_HOME'] = old_home + '-other'
 assert manager.unload('feishu-enhanced')
-assert not a._topic_context_hook_ready, 'old instance still creates references'
+
 assert not manager._hooks.get('pre_llm_call'), 'hook leaked on unload'
 os.environ['HERMES_HOME'] = old_home
 restored = platform_registry.get('feishu').adapter_factory

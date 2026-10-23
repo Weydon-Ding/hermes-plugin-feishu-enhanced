@@ -2,8 +2,8 @@ name: feishu-enhanced
 label: Feishu Enhanced (community)
 kind: platform
 version: 0.1.0
-description: Community Feishu clarify cards and once-per-session topic-root context. Direct install only; not catalog eligible.
+description: Community Feishu clarify cards and native topic-root quote suppression. Direct install only; not catalog eligible.
 author: Community contributors
 license: MIT
 provides_tools: []
-provides_hooks: [pre_llm_call]
+provides_hooks: []

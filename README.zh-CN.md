@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-这是一个**社区直接安装插件**，提供飞书/Lark 原生 `clarify` 卡片和按真实会话去重的话题根消息上下文。通过继承官方 `FeishuAdapter` 并替换同名 `feishu` 平台工厂实现；不会修改核心源码、增加模型工具、改写系统提示词、增加流式消息功能或另起一个机器人连接。
+这是一个**社区直接安装插件**，提供飞书/Lark 原生 `clarify` 卡片和话题根消息引用正文抑制。通过继承官方 `FeishuAdapter` 并替换同名 `feishu` 平台工厂实现；不会修改核心源码、增加模型工具、改写系统提示词、增加流式消息功能或另起一个机器人连接。
 
 **不是 Hermes / Nous Research 官方插件，没有官方背书，也不符合官方插件目录准入。** 使用私有适配器/clarify 接口涉及目录规则 9；同名平台注册替换涉及规则 15。CLI 验证成功不等于目录接纳。原生插件与网关同进程、同权限运行，不是沙箱。
 
@@ -20,26 +20,22 @@
 
 ## 话题根消息上下文
 
-默认按**真实 agent session ID**只注入一次根消息，支持多 profile multiplex。
-先通过核心 canonical routing identity 固定最终执行 profile，再使用其已有插件 hook
-和本地缓存；入口机器人的 profile 不必等于执行 profile。使用 ContextVar 绑定 home，
-不改进程环境、不向其他 profile 注册 hook、不绕过官方授权。
-目标 profile 必须事先启用插件；hook 不活跃、路由/home 不可靠、媒体消息、内容超预算
-或存储已满时保留官方完整引用。非根消息显式引用、私聊、普通群和回复锚点不变。
-引用文件含 owner，异 profile 或复制来的引用不会读取其他 profile 的消息。
+群消息具有原生话题 `thread_id`，且最终解析出的 `reply_to_message_id` 等于原始
+`root_id` 时，只清空 `reply_to_text`，让网关不再添加根消息引用前缀。
+每一轮都适用，包括显式引用根消息、命令和媒体消息；非根消息引用保留完整正文。
+私聊、普通群、缺少 root 或 reply ID 的消息不变，回复锚点和话题会话隔离不变。
 
-`/new` 创建新真实会话后可再次注入，两个 profile 的相同群/话题独立记账。
-显式再次引用根消息也可能被去重；压缩/回退可能丢失旧详情，hook 返回与实际模型接收
-之间也有失败窗口，因此**不是无损保证**。缓存含消息正文，位于
-`<HERMES_HOME>/cache/feishu-enhanced-topic/`，应按会话记录保护；排队引用未执行时不要删除。
-旧版无 owner 的缓存引用会被拒绝，应先排空旧队列；详情及容量限制见 [REPLY_CONTEXT.md](REPLY_CONTEXT.md)。
-可用 `hermes config set platforms.feishu.extra.topic_root_context_once false` 关闭。
+multiplex 使用完全相同的无状态规则，不再有特殊路由、标记、sidecar、SQLite、
+缓存、生命周期 hook 或上下文补注入。`/new` 正常清空上下文，之后也不会补回根消息。
+这是明确接受的取舍：连第一轮也不自动注入根正文；重置后需要的详情请直接粘贴到新消息。
+旧 `topic_root_context_once` 配置不再使用。不会迁移或删除现有运行时缓存；
+切换版本前应先排空含旧引用标记的队列。详见 [VERIFICATION.md](VERIFICATION.md)。
 本次未安装或重启。
 
-最新离线验证：干净核心 `bf0203a794a07aac3ff764972ab9087baa4e4f4e`、受管 Python 3.14.7、
-真实 Lark SDK，**60 项插件测试通过**，官方验证器退出 0、`ok: true`。
-包括真实路由匹配/身份固定、profile 本地 PluginContext/PluginManager、并发上下文、
-真实 SessionStore 和 `/new`；不是线上飞书验收或官方目录准入。
+最新离线验证：干净核心 `bf0203a794a07aac3ff764972ab9087baa4e4f4e`、受管 Python 3.14.9、
+真实 Lark SDK，**42 项插件测试通过**，官方验证器退出 0、`ok: true`。
+包括真实适配器规范化/网关引用格式化、无 topic hook 的发现/卸载、真实 SessionStore
+和 `/new`；不是线上飞书验收或官方目录准入。
 
 ## 复用昨天的实现
 
@@ -98,6 +94,6 @@ Windows / Git Bash 使用带引号的 `C:/.../python.exe` 路径。脚本在 scr
 
 ## 仍需真实飞书验收
 
-有意重启后，分别核对实际卡片 UI 与工具返回值：单选/重复点击/过期、多选勾选与取消后提交、Other 后在原话题输入、按用户隔离与共享话题、群策略、发送回退与超时/重置退役；并确认普通消息、附件、审批、更新确认和流式行为没有变化。离线通过不代表线上 UI/回调已经验收。
+有意重启后，分别核对实际卡片 UI 与工具返回值：单选/重复点击/过期、多选勾选与取消后提交、Other 后在原话题输入、按用户隔离与共享话题、群策略、发送回退与超时/重置退役；并确认普通消息、附件、审批、更新确认和流式行为没有变化。话题首轮/后续轮及 `/new` 后均不应出现根引用前缀，非根引用完整保留；检查另一话题、私聊、普通群和 multiplex。离线通过不代表线上 UI/回调已经验收。
 
 MIT；用户发布身份未知，因此使用通用 contributors 署名。没有发布仓库、修改运行配置或改动其他 profile。完整说明见 [README.md](README.md)。

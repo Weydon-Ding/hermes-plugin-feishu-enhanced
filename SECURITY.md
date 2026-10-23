@@ -6,4 +6,6 @@ For a suspected authorization bypass or secret disclosure, do not file raw explo
 
 The callback transport, signature verification and Feishu/Lark membership guarantees are owned by the official adapter. This plugin additionally binds clicks to the exact pending entry, message, chat and session owner, and rechecks official group policy. It does not weaken pairing or global allowlists or mark inbound events trusted. Text replies continue through official gateway authorization and routing.
 
-Known limits: SDK/adapter internals may change; state is memory-only; stale buttons may remain visible after network failure or restart; shared sessions deliberately allow multiple policy-authorized participants. No security audit or live-channel acceptance is claimed.
+Topic-root suppression changes only reply text, not authorization, reply IDs or routing. It stores no message text, registers no lifecycle hook, and never reads another profile. Old runtime sidecars are left untouched; protect any retained files like transcripts and drain old queued reference-bearing turns before switching builds. Root context is intentionally not restored after `/new`.
+
+Known limits: SDK/adapter internals may change; clarify state is memory-only; stale buttons may remain visible after network failure or restart; shared sessions deliberately allow multiple policy-authorized participants. No security audit or live-channel acceptance is claimed.
