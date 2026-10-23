@@ -73,7 +73,7 @@ Existing private-core-import warnings remain; no catalog approval is implied.
 Full plugin suite and official CLI validator are run by `scripts/verify.py`
 against clean core `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, using existing
 managed Python 3.14.7 and real Lark SDK. Latest reports:
-`C:/Users/Administrator/AppData/Local/hermes/cache/scratch/feishu-topic-policy-report/`.
+`C:/path/to/scratch/feishu-topic-policy-report/`.
 No core edit, package installation, live-profile install, gateway restart,
 commit or push. Validator success is not catalog eligibility. Still required:
 after a separately authorized restart, test first/repeated root, explicit
@@ -188,11 +188,11 @@ for a production fix. No production code was changed.
 Executed with the existing managed Python 3.14.7 and real Lark SDK:
 
 ```sh
-"C:/Users/Administrator/AppData/Local/hermes/installs/bd3acbc64406c95b/environments/0826bd30a7a34ffba79b119c7f4e7932/venv/Scripts/python.exe" \
-  F:/hermes-plugin-feishu-enhanced/scripts/verify.py \
-  --hermes-root C:/Users/Administrator/AppData/Local/hermes/hermes-agent \
-  --scratch C:/Users/Administrator/AppData/Local/hermes/cache/scratch \
-  --report-dir C:/Users/Administrator/AppData/Local/hermes/cache/scratch/feishu-topic-report
+"C:/path/to/hermes-runtime/python.exe" \
+  scripts/verify.py \
+  --hermes-root C:/path/to/clean-hermes-checkout \
+  --scratch C:/path/to/scratch \
+  --report-dir C:/path/to/scratch/feishu-topic-report
 ```
 
 Result: 38 tests passed, including all 29 pre-existing regressions and real

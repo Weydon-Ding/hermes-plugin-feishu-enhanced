@@ -10,14 +10,14 @@
 ## Reproducible command
 
 ```sh
-"C:/Users/Administrator/AppData/Local/hermes/installs/bd3acbc64406c95b/environments/0826bd30a7a34ffba79b119c7f4e7932/venv/Scripts/python.exe" \
+"C:/path/to/hermes-runtime/python.exe" \
   scripts/verify.py \
-  --hermes-root "C:/Users/Administrator/AppData/Local/hermes/cache/scratch/feishu-clean" \
-  --scratch "C:/Users/Administrator/AppData/Local/hermes/cache/scratch" \
-  --report-dir "C:/Users/Administrator/AppData/Local/hermes/cache/scratch/feishu-clarify-report"
+  --hermes-root "C:/path/to/scratch/feishu-clean" \
+  --scratch "C:/path/to/scratch" \
+  --report-dir "C:/path/to/scratch/feishu-clarify-report"
 ```
 
-The paths above record the local verification environment, not portable installation paths. Substitute your own interpreter, clean checkout and scratch directory. The runner creates temporary homes and strips Feishu/Lark environment variables. It does not install, enable or restart the real gateway.
+The paths above are generic examples, not paths from the original verification environment. Run from the plugin repository root and substitute your own interpreter, clean checkout and scratch directory. The runner creates temporary homes and strips Feishu/Lark environment variables. It does not install, enable or restart the real gateway.
 
 ## Actual results
 
