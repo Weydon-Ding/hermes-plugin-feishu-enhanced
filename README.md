@@ -18,6 +18,12 @@ A **community, direct-install** Hermes plugin that adds native Feishu/Lark clari
 
 Cards and pending state are process-local; restarting does not restore pending cards. Late callbacks after restart are inert. A retirement network failure may leave visible stale buttons, but they cannot resolve an expired entry.
 
+### Readable option text
+
+Each choice is shown in full in its own numbered, wrapping `div` / `plain_text` block before the action rows. No `lines` limit is set. Recommendation suffixes, explicit newlines, Unicode and Markdown characters remain literal original text; choices are not summarized or truncated by the plugin. The short buttons read `选项 1`, `选项 2`, etc. (option 1, option 2). Multi-selection adds a checkmark and primary style to selected buttons without changing their numbering.
+
+Button values still carry the original zero-based index. A click returns the original choice string, not the short button label; multi-submit preserves original choice order. Other, text fallback, identity gates and retirement are unchanged. This avoids relying on long button labels on narrow screens; it is not an increase in Feishu's overall card-size limits. Actual mobile rendering still needs the live acceptance below.
+
 ### Card owner identity
 
 Ownership accepts the callback's nonempty `open_id`, `user_id` or `union_id`, not just `open_id`: Hermes session keys prefer union, then tenant user ID, then open ID. SDK fields are optional; do not assume callbacks include union. To bridge an open-only callback, the adapter remembers typed IDs already received together by the official inbound sender resolver (no new API calls or permissions). This account/adapter-local memory is keyed by canonical participant, capped at 1024 entries, and expires after one hour; expiry is pruned on writes and card creation. Disconnect clears it, including in-flight resolver protection. No persistence or cross-adapter sharing.
@@ -45,7 +51,7 @@ switching builds. See [verification notes](VERIFICATION.md).
 
 ## Compatibility and migration
 
-Verified against clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.9 and the real Lark SDK: **58 tests passed**, official validator exit 0 (`ok: true`). Includes actual adapter normalization/gateway formatting, discovery/unload with no topic hook, the real `/new` handler with SessionStore, real session-key/SDK identity regressions, and verification environment isolation. This is a tested commit, not a supported version range. Retest after upgrading Hermes; this plugin does not install packages.
+Verified against clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.9 and the real Lark SDK: **65 tests passed**, official validator exit 0 (`ok: true`). Includes full option text in serialized cards, original-answer mapping, multi refresh/submit, actual adapter normalization/gateway formatting, discovery/unload with no topic hook, the real `/new` handler with SessionStore, real session-key/SDK identity regressions, and verification environment isolation. This is a tested commit, not a supported version range. Retest after upgrading Hermes; this plugin does not install packages.
 
 The plugin calls the official `register()` through a forwarding context, changing only `adapter_factory`. Every official registration field (authorization env names, setup, validation, dependency probes/installers, YAML bridge, standalone sender, delivery settings) is preserved. Registration is owned by the actual `PluginContext` scope/ledger. No private registry-table writes or global monkeypatching.
 
@@ -110,6 +116,7 @@ After an intentional restart, confirm the actual rendered card and returned tool
 5. Plain text fallback and timeout/reset/typed-answer retirement.
 6. Ordinary messages, attachments, approvals, update prompts and streaming behave as before.
 7. Topic-root prefixes stay absent on first/repeated turns and after `/new`; explicit non-root replies keep their full quote. Check another topic, DMs, ordinary groups and multiplex operation.
+8. On a phone, send short, medium and long Chinese choices (including a recommendation suffix, emoji and explicit newlines). All numbered descriptions must be readable in the body, including the final sentinel of the long choice. Buttons must stay short. Select the long choice and compare the tool result with its complete original text; repeat with multi-toggle/deselect/submit and Other. Test desktop too. This branch has not been deployed or tested against the live card API.
 
 No live channel rendering/callback acceptance is claimed by offline tests.
 

@@ -243,7 +243,7 @@ class Contracts(unittest.IsolatedAsyncioTestCase):
         card = a._send_interactive_card.call_args.args[1]
         self.assertEqual(card['elements'][0]['content'], 'Pick?')
         buttons = [b for e in card['elements'] if e['tag'] == 'action' for b in e['actions']]
-        self.assertEqual([b['text']['content'] for b in buttons], ['A', 'B', 'Other / 其他'])
+        self.assertEqual([b['text']['content'] for b in buttons], ['选项 1', '选项 2', 'Other / 其他'])
         self.assertTrue(all(b['value'].get('hermes_feishu_clarify') == 'v1' for b in buttons))
 
 if __name__ == '__main__':
