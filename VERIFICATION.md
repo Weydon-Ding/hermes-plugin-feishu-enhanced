@@ -1,5 +1,15 @@
 # Verification record
 
+## Readable clarify options
+
+- Repository baseline: `8a0618bd47d1bde17c7989a632c75014afbcd835` (fresh clone of main, including the merged owner-identity fix).
+- Same clean Hermes commit and existing managed Python/Lark SDK as the owner-identity record below. No dependency installation, installed-plugin changes, profile changes or gateway restart.
+- Before implementation: added seven tests in `tests/test_card_layout.py`; the unchanged implementation produced two layout assertion failures and one missing-option-block index error. The remaining 62 tests passed. This reproduces the absence of full choice text outside the buttons, not a live rendering test.
+- After implementation: **65 tests, OK**, `scripts/verify.py` exit 0; official validation handler returned `ok: true`. The existing private-core-import / in-process warnings remain. The pre-existing short-card expectation was updated for numbered buttons.
+- New coverage traverses the actual send-card serialization and real clarify registry with only the network boundary mocked: full Chinese/emoji/newline/recommendation text, literal Markdown characters, uncapped plain-text blocks before buttons, short labels and original callback indices, selected/deselected refresh, duplicate deliveries, empty submit, original-order multi answers, exact original single answer, Other text capture and wrong-user rejection. Numeric labels also work beyond the alphabet.
+- Layout uses Feishu's documented `div` / `plain_text` content component without the optional `lines` cap: https://open.feishu.cn/document/feishu-cards/card-components/content-components/plain-text . The official documentation describes `lines` as a maximum with ellipsis beyond it. No CSS, undocumented wrap flag or Markdown interpretation is needed for choice text.
+- No actual Feishu API call, mobile/desktop rendering or live callback acceptance is claimed. A platform card-size limit can still reject an oversized payload; the existing send failure path remains the official numbered-text fallback. Use the acceptance steps in both READMEs after intentional deployment.
+
 ## Owner-identity fix — 2026-10-25
 
 - Repository baseline: `406725bc4c4649c64c8dbda7da9238a6a0a4f2b6` (fresh clone/fetch).

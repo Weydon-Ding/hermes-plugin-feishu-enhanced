@@ -88,16 +88,22 @@ class FeishuClarifyMixin:
 
     @staticmethod
     def _clarify_card(question, choices, clarify_id, multi=False, selected=()):
-        actions = [_card_button(('✓ ' if i in selected else '') + str(label),
+        # Mobile clients ellipsize long button labels. Keep the original choices
+        # in wrapping plain-text blocks (no line cap or Markdown interpretation)
+        # and use the same one-based numbers on the short action buttons.
+        card = _card('Hermes · Question', 'blue', question)
+        card['elements'].extend(
+            {'tag': 'div', 'text': {'tag': 'plain_text', 'content': f'{i + 1}. {label}'}}
+            for i, label in enumerate(choices))
+        actions = [_card_button(('✓ ' if i in selected else '') + f'选项 {i + 1}',
                    'primary' if i in selected else 'default', {
                        NAMESPACE: 'v1', 'id': clarify_id, 'op': 'toggle' if multi else 'choose', 'index': i,
-                   }) for i, label in enumerate(choices)]
+                   }) for i in range(len(choices))]
         if multi:
             actions.append(_card_button('Submit / 提交', 'primary', {
                 NAMESPACE: 'v1', 'id': clarify_id, 'op': 'submit'}))
         actions.append(_card_button('Other / 其他', 'default', {
             NAMESPACE: 'v1', 'id': clarify_id, 'op': 'other'}))
-        card = _card('Hermes · Question', 'blue', question)
         card['elements'].extend({'tag': 'action', 'actions': actions[i:i + 3]}
                                 for i in range(0, len(actions), 3))
         return card
