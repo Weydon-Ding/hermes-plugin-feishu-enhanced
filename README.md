@@ -18,6 +18,12 @@ A **community, direct-install** Hermes plugin that adds native Feishu/Lark clari
 
 Cards and pending state are process-local; restarting does not restore pending cards. Late callbacks after restart are inert. A retirement network failure may leave visible stale buttons, but they cannot resolve an expired entry.
 
+### Card owner identity
+
+Ownership accepts the callback's nonempty `open_id`, `user_id` or `union_id`, not just `open_id`: Hermes session keys prefer union, then tenant user ID, then open ID. SDK fields are optional; do not assume callbacks include union. To bridge an open-only callback, the adapter remembers typed IDs already received together by the official inbound sender resolver (no new API calls or permissions). This account/adapter-local memory is keyed by canonical participant, capped at 1024 entries, and expires after one hour; expiry is pruned on writes and card creation. Disconnect clears it, including in-flight resolver protection. No persistence or cross-adapter sharing.
+
+A card snapshots only its owner's proof when sent; later traffic cannot change it. Normal answer/expiry/retirement/disconnect removes that snapshot. Known conflicting ID fields are rejected. If no trusted proof exists and the callback lacks the canonical ID, the click is rejected, not treated as shared; use the existing text-answer path where available, or expire/reissue after a fresh user message. `open_id` remains required for the official interaction gates. Shared sessions still have no individual owner; current group policy and exact chat/message/thread binding still apply.
+
 ## Topic-mode reply context
 
 For a group event with a native topic `thread_id`, when the resolved
@@ -39,7 +45,7 @@ switching builds. See [verification notes](VERIFICATION.md).
 
 ## Compatibility and migration
 
-Verified against clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.9 and the real Lark SDK: **42 tests passed**, official validator exit 0 (`ok: true`). Includes actual adapter normalization/gateway formatting, discovery/unload with no topic hook, and the real `/new` handler with SessionStore. This is a tested commit, not a supported version range. Retest after upgrading Hermes; this plugin does not install packages.
+Verified against clean Hermes `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, managed Python 3.14.9 and the real Lark SDK: **58 tests passed**, official validator exit 0 (`ok: true`). Includes actual adapter normalization/gateway formatting, discovery/unload with no topic hook, the real `/new` handler with SessionStore, real session-key/SDK identity regressions, and verification environment isolation. This is a tested commit, not a supported version range. Retest after upgrading Hermes; this plugin does not install packages.
 
 The plugin calls the official `register()` through a forwarding context, changing only `adapter_factory`. Every official registration field (authorization env names, setup, validation, dependency probes/installers, YAML bridge, standalone sender, delivery settings) is preserved. Registration is owned by the actual `PluginContext` scope/ledger. No private registry-table writes or global monkeypatching.
 
@@ -75,7 +81,7 @@ These are installation instructions, **not a claim that anything was installed/e
 
 ## Offline verification
 
-Use a Hermes-managed Python interpreter with Hermes dependencies and its Feishu SDK already present. No pytest, pip, network credentials or package installation are needed. Use a **clean Hermes checkout**, not one with the earlier core patch. `scripts/verify.py` uses throwaway homes under the scratch directory and executes both tests and the actual CLI validator. It exits nonzero if either fails.
+Use a Hermes-managed Python interpreter with Hermes dependencies and its Feishu SDK already present. No pytest, pip, network credentials or package installation are needed. Use a **clean Hermes checkout**, not one with the earlier core patch. `scripts/verify.py` uses throwaway HOME/HERMES_HOME/XDG directories and an environment allowlist, not merely removal of Feishu/Lark tokens. It executes tests and the official CLI validation handler directly with `install_deps=False`, bypassing CLI startup maintenance for a fresh home. It exits nonzero if either fails.
 
 ```sh
 /path/to/hermes/python scripts/verify.py \
@@ -86,12 +92,7 @@ Use a Hermes-managed Python interpreter with Hermes dependencies and its Feishu 
 
 Windows/Git Bash: use quoted `C:/.../python.exe` and `C:/...` paths. For a clean snapshot without changing the live checkout, create `git archive HEAD --output=C:/.../scratch/hermes.tar` and extract it there. Archive creation must finish before tests run.
 
-Lower-level commands (set `HERMES_HOME` to a disposable scratch home and `PYTHONPATH` to the clean checkout):
-
-```sh
-python -m unittest discover -s tests -v
-python -m hermes_cli.main plugins validate . --json
-```
+Prefer the runner over a bare `python -m hermes_cli.main plugins validate`: the latter can perform startup dependency preparation even for validation. The runner invokes the same official `hermes_cli.plugins_cmd_catalog.cmd_validate` handler without that startup path.
 
 `tests/test_legacy.py` ports the previous local implementation's regression tests. `tests/test_plugin.py` covers the standalone/security/lifecycle contracts. `tests/test_discovery.py` runs real plugin discovery in a child process, forbids direct socket connections, checks inherited non-clarify behavior, scoped unload and restoration. Only network boundaries/parent-dispatch observation are mocked; callbacks resolve the **real** clarify registry. `scripts/verify.py` does not replace the full upstream regression suite.
 
@@ -105,6 +106,7 @@ After an intentional restart, confirm the actual rendered card and returned tool
 2. Multi: choose two, deselect one, Submit; retry delivery does not reverse a toggle.
 3. Other then typed text, both single and multi, in the original thread.
 4. Another group member cannot answer a per-user question; permitted users can answer shared threads. Disabled/allowlist/blacklist/admin group rules still apply.
+   Test both ordinary groups and per-user topics where the inbound owner is a tenant/union ID but the callback contains only open ID (do not add permissions just to fill missing fields). Verify the initiating member succeeds and another member in the same chat/topic is denied. Without a usable identity proof, verify safe rejection and fresh-message/reissue recovery.
 5. Plain text fallback and timeout/reset/typed-answer retirement.
 6. Ordinary messages, attachments, approvals, update prompts and streaming behave as before.
 7. Topic-root prefixes stay absent on first/repeated turns and after `/new`; explicit non-root replies keep their full quote. Check another topic, DMs, ordinary groups and multiplex operation.

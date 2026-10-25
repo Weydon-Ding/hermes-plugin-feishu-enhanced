@@ -31,7 +31,8 @@ def register(ctx):
         else:
             logger.warning('Feishu clarify: upstream/native or unknown clarify override detected; preserving it, plugin inactive.')
         return
-    required = ('_send_interactive_card', '_card_response', '_allow_group_message', '_on_card_action_trigger', '_response_succeeded')
+    required = ('_send_interactive_card', '_card_response', '_allow_group_message', '_on_card_action_trigger',
+                '_response_succeeded', '_resolve_sender_profile', '_is_interactive_operator_authorized')
     if any(not callable(getattr(official.FeishuAdapter, name, None)) for name in required) or not hasattr(cg, '_entries') or not hasattr(cg, '_lock'):
         logger.warning('Feishu clarify: incompatible internal API; leaving official adapter untouched.')
         return
@@ -43,6 +44,8 @@ def register(ctx):
         inspect.signature(official.FeishuAdapter._on_card_action_trigger).bind(None, None)
         inspect.signature(official.FeishuAdapter._allow_group_message).bind(None, None, 'chat')
         inspect.signature(official.FeishuAdapter._card_response).bind({})
+        inspect.signature(official.FeishuAdapter._resolve_sender_profile).bind(None, None, is_bot=False)
+        inspect.signature(official.FeishuAdapter._is_interactive_operator_authorized).bind(None, 'open_id')
     except (TypeError, ValueError):
         logger.warning('Feishu clarify: incompatible internal signature; leaving official adapter untouched.')
         return

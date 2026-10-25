@@ -6,6 +6,7 @@ thread-aware session ownership, fail-safe delivery and adapter-local lifecycle.
 """
 import json
 import logging
+import time
 from types import SimpleNamespace
 
 from plugins.platforms.feishu.adapter import _card, _card_button
@@ -16,8 +17,72 @@ NAMESPACE = 'hermes_feishu_clarify'
 
 
 class FeishuClarifyMixin:
+    # Adapter/account-local proofs from authenticated inbound sender IDs only.
+    # No directory lookup, persistence, cross-adapter sharing or alias chaining.
+    _CLARIFY_IDENTITY_TTL = 3600
+    _CLARIFY_IDENTITY_LIMIT = 1024
+
+    @staticmethod
+    def _clarify_identity_fields(identity):
+        return {name: value for name in ('open_id', 'user_id', 'union_id')
+                if isinstance(value := getattr(identity, name, None), str) and value}
+
+    def _clarify_prune_identities(self):
+        """Called under cg._lock; expired values are never read for new cards."""
+        cache = getattr(self, '_clarify_identities', {})
+        now = time.monotonic()
+        for canonical, (_, expiry) in list(cache.items()):
+            if expiry <= now:
+                cache.pop(canonical, None)
+        return cache
+
+    async def _resolve_sender_profile(self, sender_id, *, is_bot=False):
+        generation = getattr(self, '_clarify_identity_generation', 0)
+        fields = self._clarify_identity_fields(sender_id)
+        profile = await super()._resolve_sender_profile(sender_id, is_bot=is_bot)
+        canonical = profile.get('user_id_alt') or profile.get('user_id')
+        expected = fields.get('union_id') or fields.get('user_id') or fields.get('open_id')
+        if not is_bot and canonical and canonical == expected:
+            with cg._lock:
+                if generation == getattr(self, '_clarify_identity_generation', 0):
+                    if not hasattr(self, '_clarify_identities'):
+                        self._clarify_identities = {}
+                    cache = self._clarify_prune_identities()
+                    cache.pop(canonical, None)
+                    while len(cache) >= self._CLARIFY_IDENTITY_LIMIT:
+                        cache.pop(next(iter(cache)))
+                    cache[canonical] = (fields, time.monotonic() + self._CLARIFY_IDENTITY_TTL)
+        return profile
+
+    @staticmethod
+    def _clarify_session_owner(state):
+        # build_session_key: agent:<profile>:feishu:<type>:<chat>[:thread][:owner].
+        parts = state['key'].split(':')
+        if len(parts) < 5 or parts[0] != 'agent' or parts[2] != 'feishu' or parts[4] != state['chat']:
+            return False, None
+        if parts[3] not in ('dm', 'group', 'channel', 'thread'):
+            return False, None
+        tail = parts[5:]
+        if state['thread']:
+            # DMs put thread last; groups put thread before owner.
+            if not tail or tail.pop(-1 if parts[3] == 'dm' else 0) != state['thread']:
+                return False, None
+        if len(tail) > 1 or (tail and not tail[0]):
+            return False, None
+        return True, tail[0] if tail else None
+
+    def _clarify_owner_matches(self, owner, operator, state):
+        fields = self._clarify_identity_fields(operator)
+        proof = state.get('owner_identity', {})
+        # Never accept a matching alias accompanied by a conflicting known ID.
+        if any(fields[name] != value for name, value in proof.items() if name in fields):
+            return False
+        return owner in fields.values() or any(fields.get(name) == value for name, value in proof.items())
+
     async def disconnect(self):
         with cg._lock:
+            self._clarify_identity_generation = getattr(self, '_clarify_identity_generation', 0) + 1
+            getattr(self, '_clarify_identities', {}).clear()
             getattr(self, '_clarify_cards', {}).clear()
         return await super().disconnect()
 
@@ -47,6 +112,11 @@ class FeishuClarifyMixin:
                 self._clarify_cards = {}
             state = {'chat': chat_id, 'message': '', 'key': session_key,
                      'selected': set(), 'tokens': set(), 'entry': entry, 'thread': (metadata or {}).get('thread_id')}
+            valid, owner = self._clarify_session_owner(state)
+            cache = self._clarify_prune_identities()
+            # Freeze only this card's owner proof. Later inbound traffic cannot
+            # change a pending card's identity; retirement removes the snapshot.
+            state['owner_identity'] = dict(cache[owner][0]) if valid and owner in cache else {}
             self._clarify_cards[clarify_id] = state
         try:
             result = await self._send_interactive_card(
@@ -83,26 +153,14 @@ class FeishuClarifyMixin:
             return False
         if not state['message'] or getattr(context, 'open_message_id', '') != state['message']:
             return False
-        # build_session_key: agent:<profile>:feishu:<type>:<chat>[:thread][:owner].
-        parts = state['key'].split(':')
-        if len(parts) < 5 or parts[0] != 'agent' or parts[2] != 'feishu' or parts[4] != state['chat']:
+        valid, owner = self._clarify_session_owner(state)
+        if not valid or (owner is not None and not self._clarify_owner_matches(owner, operator, state)):
             return False
-        tail = parts[5:]
-        if parts[3] == 'dm':
-            # Callback transport authenticates membership in the private chat; also retain
-            # the official interactive gate. Explicit owner suffixes must match.
-            if state['thread']:
-                if not tail or tail.pop() != state['thread']:
-                    return False
-            return len(tail) <= 1 and (not tail or tail[0] == user) and self._is_interactive_operator_authorized(user)
-        if parts[3] not in ('group', 'channel', 'thread'):
-            return False
-        if not self._allow_group_message(SimpleNamespace(open_id=user, user_id=getattr(operator, 'user_id', '')), state['chat']):
-            return False
-        if state['thread']:
-            if not tail or tail.pop(0) != state['thread']:
-                return False
-        return len(tail) <= 1 and (not tail or tail[0] == user)
+        if state['key'].split(':')[3] == 'dm':
+            # Private-chat transport membership plus the official interactive gate.
+            return self._is_interactive_operator_authorized(user)
+        return self._allow_group_message(
+            SimpleNamespace(open_id=user, user_id=getattr(operator, 'user_id', '')), state['chat'])
 
     def _handle_clarify_card_action(self, *, event, action_value):
         cid = action_value.get('id')
