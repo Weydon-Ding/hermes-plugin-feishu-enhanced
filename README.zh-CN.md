@@ -18,6 +18,12 @@
 
 卡片状态仅在内存中；重启不恢复未完成卡片。网络异常可能让过期按钮仍可见，但无法回答失效项。
 
+### 卡片所有者身份
+
+不再仅将 callback 的 `open_id` 与 owner 后缀比较：真实 Hermes key 优先 union_id，其次 tenant user_id，最后 open_id。SDK 三类字段均可缺失，不能假定回调必有 union_id。对仅带 open_id 的回调，插件复用官方入站 sender resolver 已收到的同一用户带类型 ID 对应关系，不增加 API 请求、权限或通讯录抓取。映射仅属于当前 account/adapter，以 canonical participant 为键，最多 1024 项、一小时有效；写入和创建卡片时清理过期项，断连清空并防止在途 resolver 回填，不持久化、不跨适配器共享。
+
+卡片发送时只快照本卡 owner 的证明，后续消息不能修改它；回答、过期退役和断连按原有机制删除快照。已知字段冲突时拒绝。没有可信对应关系且回调缺 canonical ID 时安全拒绝，不降级为共享会话；可用时使用原有文本回答路径，或过期后让用户发新消息再重新提问。官方群策略/交互门禁仍需 open_id；共享会话仍不绑定单个用户，chat/message/thread 校验不变。此身份缓存与下文无状态的话题引用规则无关。
+
 ## 话题根消息上下文
 
 群消息具有原生话题 `thread_id`，且最终解析出的 `reply_to_message_id` 等于原始
@@ -33,7 +39,7 @@ multiplex 使用完全相同的无状态规则，不再有特殊路由、标记�
 本次未安装或重启。
 
 最新离线验证：干净核心 `bf0203a794a07aac3ff764972ab9087baa4e4f4e`、受管 Python 3.14.9、
-真实 Lark SDK，**42 项插件测试通过**，官方验证器退出 0、`ok: true`。
+真实 Lark SDK，**58 项插件测试通过**，官方验证器退出 0、`ok: true`。
 包括真实适配器规范化/网关引用格式化、无 topic hook 的发现/卸载、真实 SessionStore
 和 `/new`；不是线上飞书验收或官方目录准入。
 
@@ -45,7 +51,7 @@ multiplex 使用完全相同的无状态规则，不再有特殊路由、标记�
 
 ## 兼容性与已有核心补丁
 
-已验证的干净 Hermes 提交：`e06df9c2eae6901f4c88f464e0ae6e753c0428b8`，Windows / Python 3.14.7 / 实际安装的 `lark-oapi` SDK。这是已测试提交，不是跨版本兼容承诺；升级后应重新运行测试。飞书 SDK 依赖由 Hermes 自己的 setup/受管环境提供，本插件不自行安装依赖。
+本轮已验证的 Hermes 提交：`bf0203a794a07aac3ff764972ab9087baa4e4f4e`，macOS / 受管 Python 3.14.9 / 实际安装的 `lark-oapi` SDK。这是已测试提交，不是跨版本兼容承诺；升级后应重新运行测试。飞书 SDK 依赖由 Hermes 自己的 setup/受管环境提供，本插件不自行安装依赖。
 
 注册时调用官方 `register()`，只替换 `adapter_factory`；保留所有官方授权环境变量、setup、配置校验、依赖探测/安装器、YAML 桥接、独立发送器、消息长度等元数据。使用实际 PluginContext 的作用域和卸载账本，不写私有 registry 表，也不全局 monkeypatch。
 
@@ -86,13 +92,15 @@ hermes plugins enable feishu-enhanced
   --report-dir /path/to/test-report
 ```
 
-Windows / Git Bash 使用带引号的 `C:/.../python.exe` 路径。脚本在 scratch 下建立并清理临时 HERMES_HOME，不安装依赖、不需要凭据；执行 stdlib unittest 和真正的 `hermes plugins validate`，任一失败返回非零。
+Windows / Git Bash 使用带引号的 `C:/.../python.exe` 路径。脚本在 scratch 下建立并清理临时 HOME/HERMES_HOME/XDG 目录，使用最小环境白名单（不只是剔除飞书变量），不需要凭据；执行 stdlib unittest 和官方 `plugins_cmd_catalog.cmd_validate(..., install_deps=False)`，绕过 CLI 启动维护/自动依赖准备，任一失败返回非零。优先使用此脚本，勿将直接调用 `hermes_cli.main` 视为无安装副作用的等价命令。
 
 可用 `git archive HEAD --output=C:/.../scratch/hermes.tar` 导出干净核心并解压，不修改正在使用的 checkout。底层测试命令详见英文 README。测试包含真实 PluginManager 发现、工厂选择、作用域卸载、恢复官方延迟工厂；只模拟网络边界/观察父回调，使用真实 clarify registry。
 
 验证器在已测试提交上退出 0，`ok: true`；仍明确警告私有核心导入（规则 9），平台为进程内运行。其“无运行时重新绑定”检查不证明规则 15 准入。不是完整上游回归测试。见 [VERIFICATION.md](VERIFICATION.md)。
 
 ## 仍需真实飞书验收
+
+重点核对：入站 canonical 为 tenant/union ID、实际回调只给 open_id 时，普通按用户群聊和按用户话题中，发起用户可以回答，同 chat/thread 的其他成员不能回答；共享话题仍允许通过群策略的其他成员。不要为了补齐回调 ID 新增权限。缺少身份证明时应拒绝，再由新入站消息/重新提问恢复。这里只做离线验证，尚未部署本分支。
 
 有意重启后，分别核对实际卡片 UI 与工具返回值：单选/重复点击/过期、多选勾选与取消后提交、Other 后在原话题输入、按用户隔离与共享话题、群策略、发送回退与超时/重置退役；并确认普通消息、附件、审批、更新确认和流式行为没有变化。话题首轮/后续轮及 `/new` 后均不应出现根引用前缀，非根引用完整保留；检查另一话题、私聊、普通群和 multiplex。离线通过不代表线上 UI/回调已经验收。
 

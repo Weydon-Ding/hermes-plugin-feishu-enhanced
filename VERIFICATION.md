@@ -1,6 +1,26 @@
 # Verification record
 
-## Tested baseline
+## Owner-identity fix — 2026-10-25
+
+- Repository baseline: `406725bc4c4649c64c8dbda7da9238a6a0a4f2b6` (fresh clone/fetch).
+- Actual Hermes source HEAD: `bf0203a794a07aac3ff764972ab9087baa4e4f4e`; macOS 27.0.1, existing managed Python 3.14.9 and installed `lark-oapi` 1.6.8 (runtime probe executed). No dependency changes are required for this fix.
+- Installed SDK source: `lark_oapi/event/callback/model/p2_card_action_trigger.py`, `CallBackOperator` defines open/user/union IDs, each initialized to `None`. Field support does not guarantee a field is present in an actual event.
+- Core evidence: `plugins/platforms/feishu/adapter.py::_resolve_sender_profile` maps primary=`user_id or open_id`, alt=`union_id`; `gateway/session.py::_canonical_participant` prefers alt. No core changes made.
+- RED before changing `clarify.py`: the real session-key/SDK callback tests failed eight user/union owner subcases (ordinary group and per-user topic; full and open-only callbacks). The original 42 tests passed. Two additional cache-lifecycle tests errored because the cache implementation did not yet exist; those are not counted as identity reproduction evidence.
+- GREEN after the fix: **58 tests, OK**, runner exit 0. Includes all original 42 tests plus 15 owner-identity tests (with parameterized subcases) and one verification-isolation test. New tests exercise the actual inbound normalization/resolver → SessionSource → build_session_key → card send → real SDK callback → real clarify registry path, with network/name lookup and terminal dispatch observation mocked.
+- Official validation handler `hermes_cli.plugins_cmd_catalog.cmd_validate(..., as_json=True, install_deps=False)`: exit 0, `ok: true`; private-import warning remains, isolation `in_process`, `host_ready: false`. This is not official catalog admission or a live gateway check.
+- The fix uses only adapter-local, typed inbound identity proofs: TTL 3600 seconds, at most 1024 canonical participants, lazy expiry pruning on writes/card creation, no persistence/alias chaining/new API calls. Per-card snapshots are removed with existing retirement state; disconnect clears both maps and prevents in-flight resolver repopulation. Missing proof fails closed. Shared sessions remain shared, exact context and official permission gates remain enforced.
+- Additional checks cover wrong users in the same chat/thread, optional/malformed fields, conflicting typed IDs, proof immutability, adapter isolation, bot exclusion, TTL/size bound, disconnect races and resolver-signature incompatibility. Existing expiry/replay/unknown-callback tests remain green.
+
+### Verification isolation and startup caveat
+
+The first RED run, despite temporary HOME/HERMES_HOME and an environment allowlist, exposed that `python -m hermes_cli.main plugins validate` enters fresh-home startup dependency preparation before validation; its output included automatic installation steps. This was an unintended side effect of the original runner, not a manual dependency-install command, and the disposable home was cleaned. Do not interpret that run as proof of a no-install validation boundary.
+
+The runner now calls the official validation handler directly with `install_deps=False`, avoiding CLI startup maintenance, and sets `HERMES_DISABLE_LAZY_INSTALLS=1`. Subsequent GREEN runs produced only test/validation output, without dependency preparation. Both child processes receive a minimal environment allowlist, temporary HOME/USERPROFILE/HERMES_HOME/XDG directories and no inherited provider tokens/profile-selection variables. A regression verifies this boundary using synthetic markers, not real secrets. No credentials were read by task commands; no plugin deployment, profile configuration change or gateway restart was performed.
+
+Use the reproducible runner command below with this macOS runtime or any already provisioned compatible runtime; the Windows example remains a generic path example. Real Feishu transport/UI acceptance is still required: verify the initiating user succeeds and another member is rejected in ordinary per-user groups and per-user topics with open-only callbacks; shared topics and current group policies must retain their original behavior. Do not request extra permissions to fill missing IDs. Without proof, expire/reissue after a fresh inbound message (or use the existing text-answer path where available).
+
+## Prior topic-root baseline (historical)
 
 - Clean Hermes checkout: `bf0203a794a07aac3ff764972ab9087baa4e4f4e`.
 - Windows; managed Python 3.14.9 with the actual installed Feishu/Lark SDK (interpreter/import probe executed).
